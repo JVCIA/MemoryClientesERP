@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Consulta de Clientes · ERP</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+:root{
+  --bg: #0a0d0a;
+  --bg-vignette: radial-gradient(ellipse at center, #10140f 0%, #040504 100%);
+  --amber: #ffb000;
+  --amber-dim: #8a6000;
+  --green: #4fd672;
+  --red: #ff5d5d;
+  --card-stock: #d9cba1;
+  --card-stock-shadow: #b9a97c;
+  --card-ink: #2a2317;
+  --card-guide: #6f8f6a;
+  --panel: #0f140f;
+  --panel-line: #1c241a;
+}
+
+*{ box-sizing: border-box; }
+
+html,body{
+  margin:0; padding:0;
+  background: var(--bg-vignette);
+  min-height:100vh;
+  color: var(--amber);
+  font-family:'IBM Plex Mono', monospace;
+}
+
+body{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(60px + env(safe-area-inset-bottom, 0px));
+  position:relative;
+  overflow-x:hidden;
+}
+
+/* scanline overlay */
+body::before{
+  content:"";
+  position:fixed; inset:0;
+  pointer-events:none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.028) 0px,
+    rgba(255,255,255,0.028) 1px,
+    transparent 2px,
+    transparent 3px
+  );
+  z-index: 50;
+  mix-blend-mode: overlay;
+}
+
+.wrap{ width:100%; max-width:640px; }
+
+/* ---------- header ---------- */
+.topbar{
+  display:flex; justify-content:space-between; align-items:flex-end;
+  border-bottom: 2px solid var(--amber-dim);
+  padding-bottom:10px; margin-bottom: 22px;
+  gap: 12px; flex-wrap: wrap;
+}
+.topbar h1{
+  font-family:'VT323', monospace;
+  font-size: 30px;
+  letter-spacing: 2px;
+  margin:0;
+  text-shadow: 0 0 6px rgba(255,176,0,.55);
+}
+.topbar h1 .blink{ animation: blink 1.1s steps(1) infinite; }
+@keyframes blink{ 50%{ opacity:0; } }
+
+.status{
+  font-size:12px;
+  color: var(--amber-dim);
+  text-align:right;
+  line-height:1.5;
+}
+.status b{ color: var(--amber); }
+
+.icon-btn{
+  background:none;
+  border:1px solid var(--amber-dim);
+  color: var(--amber);
+  font-family:'IBM Plex Mono', monospace;
+  font-size:12px;
+  padding:6px 10px;
+  cursor:pointer;
+  border-radius:2px;
+  letter-spacing:1px;
+}
+.icon-btn:hover{ background: rgba(255,176,0,.08); border-color: var(--amber); }
+
+.toprow-actions{ display:flex; gap:8px; align-items:center; }
+
+/* ---------- panels (settings / upload) ---------- */
+.panel{
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 3px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.panel h2{
+  font-family:'VT323', monospace;
+  font-size: 20px;
+  letter-spacing:1px;
+  margin: 0 0 12px 0;
+  color: var(--amber);
+}
+.field-row{ margin-bottom: 14px; }
+.field-row label{ display:block; font-size:11px; color: var(--amber-dim); margin-bottom:6px; letter-spacing:1px; text-transform:uppercase; }
+
+.key-row{ display:flex; flex-wrap:wrap; gap:8px; }
+.key{
+  background:#12180f;
+  border:1px solid var(--panel-line);
+  color: var(--amber-dim);
+  padding:8px 12px;
+  font-size:12px;
+  cursor:pointer;
+  border-radius:2px;
+  font-family:'IBM Plex Mono', monospace;
+  letter-spacing: .5px;
+}
+.key.active{
+  color:#0a0d0a;
+  background: var(--amber);
+  border-color: var(--amber);
+  font-weight:600;
+}
+.key:hover:not(.active){ border-color: var(--amber-dim); color: var(--amber); }
+
+.hint{ font-size:11px; color:#5b6b57; margin-top:8px; line-height:1.5; }
+
+.danger-link{
+  background:none; border:none; color:#8a4444; font-size:11px;
+  text-decoration:underline; cursor:pointer; padding:0; font-family:'IBM Plex Mono', monospace;
+}
+.danger-link:hover{ color: var(--red); }
+
+/* ---------- upload dropzone ---------- */
+.dropzone{
+  border: 2px dashed var(--amber-dim);
+  border-radius: 4px;
+  padding: 40px 20px;
+  text-align:center;
+  cursor:pointer;
+  transition: border-color .15s, background .15s;
+}
+.dropzone:hover, .dropzone.drag{
+  border-color: var(--amber);
+  background: rgba(255,176,0,.05);
+}
+.dropzone input{ display:none; }
+.slot{
+  font-family:'VT323', monospace;
+  font-size: 22px;
+  color: var(--amber);
+  margin-bottom: 8px;
+}
+.dropzone p{ font-size:12px; color: var(--amber-dim); margin: 4px 0 0; }
+.format-hint{
+  font-size:11px; color:#5b6b57; text-align:center; margin-top:14px; line-height:1.6;
+}
+.format-hint code{ color: var(--amber-dim); }
+
+.error-box{
+  border:1px solid var(--red); color: var(--red);
+  padding:10px 14px; font-size:12px; border-radius:3px; margin-top:12px;
+}
+
+/* ---------- progress ---------- */
+.progress-line{
+  display:flex; align-items:center; gap:10px; margin-bottom: 18px;
+  font-size:12px; color: var(--amber-dim);
+}
+.progress-track{
+  flex:1; height:8px; background:#161b13; border:1px solid var(--panel-line);
+  border-radius:2px; overflow:hidden;
+}
+.progress-fill{ height:100%; background: var(--amber); box-shadow: 0 0 6px rgba(255,176,0,.7); transition: width .25s; }
+
+/* ---------- punch card ---------- */
+.stage{ display:flex; justify-content:center; margin-bottom: 22px; }
+
+.punchcard{
+  position:relative;
+  width: 100%;
+  max-width: 460px;
+  background: var(--card-stock);
+  color: var(--card-ink);
+  border-radius: 6px 34px 6px 6px;
+  box-shadow: 0 10px 26px rgba(0,0,0,.55), inset 0 0 0 1px var(--card-stock-shadow);
+  padding: 26px 28px 30px;
+  font-family:'IBM Plex Mono', monospace;
+}
+.punchcard::before{ /* guide stripe */
+  content:"";
+  position:absolute; left:0; right:0; top:52px;
+  height: 6px;
+  background: repeating-linear-gradient(to right, var(--card-guide) 0 10px, transparent 10px 16px);
+  opacity:.35;
+}
+.punchcard .notches{
+  position:absolute; top:10px; left:22px; right:46px;
+  display:flex; justify-content:space-between;
+}
+.punchcard .notches i{
+  width:6px; height:10px; background: rgba(0,0,0,.18); border-radius:1px;
+}
+.card-tab{
+  font-size:10px; letter-spacing:2px; color: var(--card-ink); opacity:.55;
+  text-transform:uppercase; margin-bottom: 22px;
+}
+.card-label{
+  font-size:12px; letter-spacing:2px; text-transform:uppercase; opacity:.6; margin-bottom:6px;
+}
+.card-value{
+  font-family:'VT323', monospace;
+  font-size: 40px;
+  line-height:1.15;
+  word-break: break-word;
+  margin-bottom: 22px;
+  min-height: 46px;
+}
+.card-answer-row{ display:flex; align-items:center; gap:8px; border-top:1px dashed var(--card-stock-shadow); padding-top:16px;}
+.card-answer-row .prompt{ font-size:16px; opacity:.7; }
+.card-answer-row input{
+  flex:1;
+  background: transparent;
+  border:none;
+  border-bottom: 2px solid var(--card-ink);
+  font-family:'IBM Plex Mono', monospace;
+  font-size:17px;
+  color: var(--card-ink);
+  padding: 4px 2px;
+  outline:none;
+}
+.card-answer-row input::placeholder{ color: rgba(42,35,23,.35); }
+
+.feedback{
+  margin-top: 14px;
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 3px;
+  display:none;
+}
+.feedback.ok{ display:block; background: rgba(79,214,114,.12); color: var(--green); border:1px solid rgba(79,214,114,.4); }
+.feedback.bad{ display:block; background: rgba(255,93,93,.1); color: var(--red); border:1px solid rgba(255,93,93,.4); }
+
+.stage-actions{ display:flex; justify-content:center; gap:10px; margin-bottom: 26px; }
+.btn{
+  background: var(--amber);
+  color:#0a0d0a;
+  border:none;
+  font-family:'IBM Plex Mono', monospace;
+  font-weight:600;
+  font-size:13px;
+  letter-spacing:1px;
+  padding:11px 22px;
+  border-radius:3px;
+  cursor:pointer;
+}
+.btn:hover{ background:#ffc23d; }
+.btn.ghost{
+  background:none; color: var(--amber); border:1px solid var(--amber-dim);
+}
+.btn.ghost:hover{ border-color: var(--amber); }
+
+/* ---------- batch summary ---------- */
+.summary-grid{ display:flex; gap:14px; margin: 16px 0 20px; flex-wrap:wrap; }
+.summary-cell{
+  flex:1; min-width:120px;
+  background:#12180f; border:1px solid var(--panel-line); border-radius:3px;
+  padding:14px; text-align:center;
+}
+.summary-cell .num{ font-family:'VT323', monospace; font-size:34px; line-height:1; }
+.summary-cell .lbl{ font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--amber-dim); margin-top:6px; }
+.summary-cell.ok .num{ color: var(--green); }
+.summary-cell.bad .num{ color: var(--red); }
+
+.miss-list{ font-size:12px; margin: 10px 0 4px; color:#c9b98a; }
+.miss-list div{ padding:4px 0; border-bottom:1px dashed var(--panel-line); }
+
+.footer-note{ font-size:11px; color:#3f4a3c; margin-top:30px; text-align:center; }
+
+@media (max-width:480px){
+  .card-value{ font-size:30px; }
+  .topbar{ align-items:flex-start; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <h1>&gt; CLIENTES<span class="blink">_</span></h1>
+    <div class="toprow-actions">
+      <button class="icon-btn" id="btnSettings">⚙ AJUSTES</button>
+    </div>
+  </div>
+
+  <div id="settingsPanel" class="panel" style="display:none;">
+    <h2>AJUSTES</h2>
+    <div class="field-row">
+      <label>Modo de pregunta</label>
+      <div class="key-row" id="modeKeys">
+        <button class="key" data-mode="mezcla">MEZCLA ALEATORIA</button>
+        <button class="key" data-mode="num2cli">Nº → CLIENTE</button>
+        <button class="key" data-mode="cli2num">CLIENTE → Nº</button>
+        <button class="key" data-mode="alternar">ALTERNAR POR LOTE</button>
+      </div>
+      <div class="hint">Mezcla aleatoria: cada pregunta del lote elige al azar una dirección u otra.</div>
+    </div>
+    <div class="field-row">
+      <label>Datos</label>
+      <div class="key-row">
+        <button class="key" id="btnReplaceExcel">CARGAR OTRO EXCEL</button>
+      </div>
+    </div>
+    <div class="field-row" style="margin-bottom:0;">
+      <button class="danger-link" id="btnWipe">Borrar lista y estadísticas guardadas</button>
+    </div>
+  </div>
+
+  <!-- UPLOAD SCREEN -->
+  <div id="uploadScreen" class="panel" style="display:none;">
+    <h2>CARGAR FICHERO DE CLIENTES</h2>
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+      <div class="slot">[ ▭▭▭▭▭▭▭▭ ]</div>
+      <p>Haz clic o arrastra aquí el Excel de clientes</p>
+    </div>
+    <div class="format-hint">
+      El fichero debe tener dos columnas: <code>Número de cliente</code> y <code>Nombre de cliente</code> (con o sin fila de cabecera).
+    </div>
+    <div id="uploadError" class="error-box" style="display:none;"></div>
+  </div>
+
+  <!-- QUIZ SCREEN -->
+  <div id="quizScreen" style="display:none;">
+    <div class="progress-line">
+      <span id="loteLabel">LOTE 1/1</span>
+      <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%;"></div></div>
+      <span id="regLabel">REG 0/15</span>
+    </div>
+
+    <div class="stage">
+      <div class="punchcard">
+        <div class="notches"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="card-tab" id="cardTab">FICHA Nº ----</div>
+        <div class="card-label" id="cardLabel">CLIENTE</div>
+        <div class="card-value" id="cardValue">—</div>
+        <div class="card-answer-row">
+          <span class="prompt" id="answerPrompt">Nº&gt;</span>
+          <input type="text" id="answerInput" autocomplete="off" placeholder="escribe la respuesta y pulsa Intro">
+        </div>
+        <div class="feedback" id="feedback"></div>
+      </div>
+    </div>
+
+    <div class="stage-actions">
+      <button class="btn" id="btnSubmit">COMPROBAR</button>
+      <button class="btn ghost" id="btnNext" style="display:none;">SIGUIENTE</button>
+    </div>
+  </div>
+
+  <!-- BATCH SUMMARY SCREEN -->
+  <div id="summaryScreen" class="panel" style="display:none;">
+    <h2 id="summaryTitle">LOTE COMPLETADO</h2>
+    <div class="summary-grid">
+      <div class="summary-cell ok"><div class="num" id="sumOk">0</div><div class="lbl">Aciertos</div></div>
+      <div class="summary-cell bad"><div class="num" id="sumBad">0</div><div class="lbl">Fallos</div></div>
+      <div class="summary-cell"><div class="num" id="sumTotal">0</div><div class="lbl">Guardados en total</div></div>
+    </div>
+    <div id="missList" class="miss-list"></div>
+    <div class="stage-actions" style="margin-top:16px;">
+      <button class="btn" id="btnNextBatch">SIGUIENTE LOTE</button>
+      <button class="btn ghost" id="btnRepasar" style="display:none;">REPASAR FALLOS</button>
+    </div>
+  </div>
+
+  <div class="footer-note">Consulta de clientes ERP · datos guardados en este navegador</div>
+</div>
+
+<script>
+(function(){
+  const STORAGE_KEY = 'erp-clientes:estado';
+  let state = {
+    clientes: [],           // [{numero, nombre}]
+    config: { modo: 'mezcla' },
+    stats: { aciertos: 0, fallos: 0 }
+  };
+
+  // runtime (not persisted)
+  let batches = [];
+  let batchIndex = 0;
+  let quiz = { order: [], qIndex: 0, aciertos: 0, fallos: 0, fallosDetalle: [], answered:false };
+
+  const el = id => document.getElementById(id);
+
+  // ---------- storage ----------
+  async function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        state = Object.assign(state, parsed);
+      }
+    }catch(e){ /* sin datos guardados todavía */ }
+  }
+  async function saveState(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){ console.error('No se pudo guardar', e); }
+  }
+
+  // ---------- utils ----------
+  function normText(s){
+    return String(s||'').trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/\s+/g,' ');
+  }
+  function normNum(s){
+    return String(s||'').trim().replace(/\s+/g,'');
+  }
+  function shuffle(arr){
+    const a = arr.slice();
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]] = [a[j],a[i]];
+    }
+    return a;
+  }
+
+  // ---------- excel parsing ----------
+  function parseWorkbook(buf){
+    const wb = XLSX.read(buf, {type:'array'});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    let rows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+    rows = rows.filter(r => r.length>=2 && (String(r[0]).trim()!=='' || String(r[1]).trim()!==''));
+    if(rows.length && isNaN(parseFloat(String(rows[0][0]).replace(',', '.')))){
+      rows = rows.slice(1); // primera fila parece cabecera de texto
+    }
+    const clientes = rows
+      .map(r => ({ numero: String(r[0]).trim(), nombre: String(r[1]).trim() }))
+      .filter(c => c.numero && c.nombre);
+    return clientes;
+  }
+
+  async function handleFile(file){
+    el('uploadError').style.display = 'none';
+    try{
+      const buf = await file.arrayBuffer();
+      const clientes = parseWorkbook(buf);
+      if(clientes.length === 0){
+        throw new Error('No se han encontrado filas válidas con número y nombre de cliente.');
+      }
+      state.clientes = clientes;
+      state.stats = { aciertos: 0, fallos: 0 };
+      await saveState();
+      startNewSession();
+    }catch(err){
+      el('uploadError').textContent = 'Error leyendo el archivo: ' + err.message;
+      el('uploadError').style.display = 'block';
+    }
+  }
+
+  // ---------- flow control ----------
+  function startNewSession(){
+    batches = [];
+    const shuffled = shuffle(state.clientes);
+    for(let i=0;i<shuffled.length;i+=15){ batches.push(shuffled.slice(i,i+15)); }
+    batchIndex = 0;
+    showScreen('quiz');
+    startBatch();
+  }
+
+  function directionFor(qi){
+    const modo = state.config.modo;
+    if(modo === 'num2cli') return 'num2cli';
+    if(modo === 'cli2num') return 'cli2num';
+    if(modo === 'alternar') return (batchIndex % 2 === 0) ? 'num2cli' : 'cli2num';
+    return Math.random() < 0.5 ? 'num2cli' : 'cli2num'; // mezcla
+  }
+
+  function startBatch(){
+    const batch = batches[batchIndex];
+    quiz = {
+      order: batch.map((c,i) => ({ cliente:c, dir: directionFor(i) })),
+      qIndex: 0, aciertos: 0, fallos: 0, fallosDetalle: [], answered:false
+    };
+    showScreen('quiz');
+    renderQuestion();
+  }
+
+  function renderQuestion(){
+    const total = quiz.order.length;
+    el('loteLabel').textContent = 'LOTE ' + (batchIndex+1) + '/' + batches.length;
+    el('regLabel').textContent = 'REG ' + (quiz.qIndex+1) + '/' + total;
+    el('progressFill').style.width = Math.round((quiz.qIndex/total)*100) + '%';
+
+    const q = quiz.order[quiz.qIndex];
+    el('cardTab').textContent = 'FICHA Nº ' + String(quiz.qIndex+1).padStart(4,'0');
+
+    if(q.dir === 'num2cli'){
+      el('cardLabel').textContent = 'Nº DE CLIENTE';
+      el('cardValue').textContent = q.cliente.numero;
+      el('answerPrompt').textContent = 'CLIENTE >';
+      el('answerInput').placeholder = 'escribe el nombre del cliente';
+    } else {
+      el('cardLabel').textContent = 'CLIENTE';
+      el('cardValue').textContent = q.cliente.nombre;
+      el('answerPrompt').textContent = 'Nº >';
+      el('answerInput').placeholder = 'escribe el número de cliente';
+    }
+    el('answerInput').value = '';
+    el('feedback').className = 'feedback';
+    el('feedback').textContent = '';
+    el('btnSubmit').style.display = 'inline-block';
+    el('btnNext').style.display = 'none';
+    quiz.answered = false;
+    el('answerInput').focus();
+  }
+
+  function checkAnswer(){
+    if(quiz.answered) return;
+    const q = quiz.order[quiz.qIndex];
+    const raw = el('answerInput').value;
+    let ok;
+    if(q.dir === 'num2cli'){
+      ok = normText(raw) === normText(q.cliente.nombre);
+    } else {
+      ok = normNum(raw) === normNum(q.cliente.numero);
+    }
+    quiz.answered = true;
+    const fb = el('feedback');
+    if(ok){
+      quiz.aciertos++; state.stats.aciertos++;
+      fb.className = 'feedback ok';
+      fb.textContent = '✓ CORRECTO';
+    } else {
+      quiz.fallos++; state.stats.fallos++;
+      const correcta = q.dir === 'num2cli' ? q.cliente.nombre : q.cliente.numero;
+      quiz.fallosDetalle.push({ pregunta: q, tuRespuesta: raw, correcta });
+      fb.className = 'feedback bad';
+      fb.textContent = '✕ INCORRECTO — correcto: ' + correcta;
+    }
+    el('btnSubmit').style.display = 'none';
+    el('btnNext').style.display = 'inline-block';
+    el('btnNext').focus();
+    saveState();
+  }
+
+  function nextQuestion(){
+    quiz.qIndex++;
+    if(quiz.qIndex >= quiz.order.length){
+      finishBatch();
+    } else {
+      renderQuestion();
+    }
+  }
+
+  function finishBatch(){
+    el('progressFill').style.width = '100%';
+    el('summaryTitle').textContent = 'LOTE ' + (batchIndex+1) + '/' + batches.length + ' COMPLETADO';
+    el('sumOk').textContent = quiz.aciertos;
+    el('sumBad').textContent = quiz.fallos;
+    el('sumTotal').textContent = state.clientes.length;
+    const missList = el('missList');
+    missList.innerHTML = '';
+    if(quiz.fallosDetalle.length){
+      quiz.fallosDetalle.forEach(m=>{
+        const label = m.pregunta.dir === 'num2cli'
+          ? (m.pregunta.cliente.numero + ' → ' + m.correcta)
+          : (m.pregunta.cliente.nombre + ' → ' + m.correcta);
+        const div = document.createElement('div');
+        div.textContent = label;
+        missList.appendChild(div);
+      });
+      el('btnRepasar').style.display = 'inline-block';
+    } else {
+      el('btnRepasar').style.display = 'none';
+    }
+    const isLast = batchIndex >= batches.length - 1;
+    el('btnNextBatch').textContent = isLast ? 'EMPEZAR DE NUEVO' : 'SIGUIENTE LOTE';
+    showScreen('summary');
+  }
+
+  function goNextBatch(){
+    if(batchIndex >= batches.length - 1){
+      startNewSession();
+    } else {
+      batchIndex++;
+      startBatch();
+    }
+  }
+
+  function repasarFallos(){
+    const soloFallos = quiz.fallosDetalle.map(f => f.pregunta.cliente);
+    batches[batchIndex] = soloFallos;
+    startBatch();
+  }
+
+  // ---------- screens ----------
+  function showScreen(name){
+    el('uploadScreen').style.display = name === 'upload' ? 'block' : 'none';
+    el('quizScreen').style.display = name === 'quiz' ? 'block' : 'none';
+    el('summaryScreen').style.display = name === 'summary' ? 'block' : 'none';
+  }
+
+  function updateModeKeys(){
+    document.querySelectorAll('#modeKeys .key').forEach(btn=>{
+      btn.classList.toggle('active', btn.dataset.mode === state.config.modo);
+    });
+  }
+
+  // ---------- events ----------
+  el('dropzone').addEventListener('click', ()=> el('fileInput').click());
+  el('fileInput').addEventListener('change', e=>{
+    if(e.target.files[0]) handleFile(e.target.files[0]);
+  });
+  ['dragover','dragenter'].forEach(ev=>{
+    el('dropzone').addEventListener(ev, e=>{ e.preventDefault(); el('dropzone').classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(ev=>{
+    el('dropzone').addEventListener(ev, e=>{ e.preventDefault(); el('dropzone').classList.remove('drag'); });
+  });
+  el('dropzone').addEventListener('drop', e=>{
+    if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+
+  el('btnSubmit').addEventListener('click', checkAnswer);
+  el('answerInput').addEventListener('keydown', e=>{
+    if(e.key === 'Enter'){
+      if(!quiz.answered) checkAnswer(); else nextQuestion();
+    }
+  });
+  el('btnNext').addEventListener('click', nextQuestion);
+  el('btnNextBatch').addEventListener('click', goNextBatch);
+  el('btnRepasar').addEventListener('click', repasarFallos);
+
+  el('btnSettings').addEventListener('click', ()=>{
+    const p = el('settingsPanel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  });
+  document.querySelectorAll('#modeKeys .key').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      state.config.modo = btn.dataset.mode;
+      updateModeKeys();
+      await saveState();
+    });
+  });
+  el('btnReplaceExcel').addEventListener('click', ()=>{
+    el('settingsPanel').style.display = 'none';
+    showScreen('upload');
+  });
+  let wipeArmed = false;
+  el('btnWipe').addEventListener('click', async ()=>{
+    if(!wipeArmed){
+      wipeArmed = true;
+      el('btnWipe').textContent = 'Pulsa otra vez para confirmar el borrado';
+      setTimeout(()=>{ wipeArmed=false; el('btnWipe').textContent='Borrar lista y estadísticas guardadas'; }, 4000);
+      return;
+    }
+    wipeArmed = false;
+    el('btnWipe').textContent = 'Borrar lista y estadísticas guardadas';
+    state = { clientes:[], config:{modo:'mezcla'}, stats:{aciertos:0,fallos:0} };
+    await saveState();
+    el('settingsPanel').style.display = 'none';
+    showScreen('upload');
+  });
+
+  // ---------- init ----------
+  (async function init(){
+    await loadState();
+    updateModeKeys();
+    if(state.clientes && state.clientes.length > 0){
+      startNewSession();
+    } else {
+      showScreen('upload');
+    }
+  })();
+})();
+</script>
+</body>
+</html>
